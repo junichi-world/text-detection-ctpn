@@ -125,8 +125,8 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, gt_ishard, dontcare_areas, im_i
     # overlaps (ex, gt), shape is A x G
     #计算anchor和gt-box的overlap，用来给anchor上标签
     overlaps = bbox_overlaps(
-        np.ascontiguousarray(anchors, dtype=np.float),
-        np.ascontiguousarray(gt_boxes, dtype=np.float))#假设anchors有x个，gt_boxes有y个，返回的是一个（x,y）的数组
+        np.ascontiguousarray(anchors, dtype=float),
+        np.ascontiguousarray(gt_boxes, dtype=float))#假设anchors有x个，gt_boxes有y个，返回的是一个（x,y）的数组
     # 存放每一个anchor和每一个gtbox之间的overlap
     argmax_overlaps = overlaps.argmax(axis=1) # (A)#找到和每一个gtbox，overlap最大的那个anchor
     max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
@@ -152,8 +152,8 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, gt_ishard, dontcare_areas, im_i
     if dontcare_areas is not None and dontcare_areas.shape[0] > 0:#这里我们暂时不考虑有doncare_area的存在
         # intersec shape is D x A
         intersecs = bbox_intersections(
-            np.ascontiguousarray(dontcare_areas, dtype=np.float), # D x 4
-            np.ascontiguousarray(anchors, dtype=np.float) # A x 4
+            np.ascontiguousarray(dontcare_areas, dtype=float), # D x 4
+            np.ascontiguousarray(anchors, dtype=float) # A x 4
         )
         intersecs_ = intersecs.sum(axis=0) # A x 1
         labels[intersecs_ > cfg.TRAIN.DONTCARE_AREA_INTERSECTION_HI] = -1
@@ -167,8 +167,8 @@ def anchor_target_layer(rpn_cls_score, gt_boxes, gt_ishard, dontcare_areas, im_i
         if gt_hardboxes.shape[0] > 0:
             # H x A
             hard_overlaps = bbox_overlaps(
-                np.ascontiguousarray(gt_hardboxes, dtype=np.float), # H x 4
-                np.ascontiguousarray(anchors, dtype=np.float)) # A x 4
+                np.ascontiguousarray(gt_hardboxes, dtype=float), # H x 4
+                np.ascontiguousarray(anchors, dtype=float)) # A x 4
             hard_max_overlaps = hard_overlaps.max(axis=0)  # (A)
             labels[hard_max_overlaps >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = -1
             max_intersec_label_inds = hard_overlaps.argmax(axis=1) # H x 1

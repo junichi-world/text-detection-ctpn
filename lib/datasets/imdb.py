@@ -1,6 +1,6 @@
 import os
 import os.path as osp
-import PIL
+from PIL import Image
 import numpy as np
 import scipy.sparse
 from lib.utils.bbox import bbox_overlaps
@@ -78,7 +78,7 @@ class imdb(object):
         raise NotImplementedError
 
     def _get_widths(self):
-      return [PIL.Image.open(self.image_path_at(i)).size[0]
+      return [Image.open(self.image_path_at(i)).size[0]
               for i in range(self.num_images)]
 
     def append_flipped_images(self):
@@ -125,8 +125,8 @@ class imdb(object):
             if gt_roidb is not None and gt_roidb[i]['boxes'].size > 0:
                 gt_boxes = gt_roidb[i]['boxes']
                 gt_classes = gt_roidb[i]['gt_classes']
-                gt_overlaps = bbox_overlaps(boxes.astype(np.float),
-                                            gt_boxes.astype(np.float))
+                gt_overlaps = bbox_overlaps(boxes.astype(float),
+                                            gt_boxes.astype(float))
                 argmaxes = gt_overlaps.argmax(axis=1)
                 maxes = gt_overlaps.max(axis=1)
                 I = np.where(maxes > 0)[0]

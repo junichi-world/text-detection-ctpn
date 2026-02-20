@@ -7,15 +7,18 @@ import sys
 
 import cv2
 import numpy as np
-import tensorflow as tf
-from tensorflow.python.platform import gfile
+import tensorflow.compat.v1 as tf
 
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from lib.fast_rcnn.config import cfg, cfg_from_file
 from lib.fast_rcnn.test import _get_blobs
 from lib.text_connector.detectors import TextDetector
 from lib.text_connector.text_connect_cfg import Config as TextLineCfg
 from lib.rpn_msr.proposal_layer_tf import proposal_layer
+
+tf.disable_v2_behavior()
 
 
 def resize_im(im, scale, max_scale=None):
@@ -68,7 +71,7 @@ if __name__ == '__main__':
     # init session
     config = tf.ConfigProto(allow_soft_placement=True)
     sess = tf.Session(config=config)
-    with gfile.FastGFile('data/ctpn.pb', 'rb') as f:
+    with tf.gfile.GFile('data/ctpn.pb', 'rb') as f:
         graph_def = tf.GraphDef()
         graph_def.ParseFromString(f.read())
         sess.graph.as_default()

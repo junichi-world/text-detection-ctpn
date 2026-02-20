@@ -7,15 +7,19 @@ import shutil
 import sys
 
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from lib.networks.factory import get_network
 from lib.fast_rcnn.config import cfg, cfg_from_file
 from lib.fast_rcnn.test import test_ctpn
 from lib.utils.timer import Timer
 from lib.text_connector.detectors import TextDetector
 from lib.text_connector.text_connect_cfg import Config as TextLineCfg
+
+tf.disable_v2_behavior()
 
 
 def resize_im(im, scale, max_scale=None):

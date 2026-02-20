@@ -119,8 +119,8 @@ def _compute_targets(rois, overlaps, labels):
 
     # Get IoU overlap between each ex ROI and gt ROI
     ex_gt_overlaps = bbox_overlaps(
-        np.ascontiguousarray(rois[ex_inds, :], dtype=np.float),
-        np.ascontiguousarray(rois[gt_inds, :], dtype=np.float))
+        np.ascontiguousarray(rois[ex_inds, :], dtype=float),
+        np.ascontiguousarray(rois[gt_inds, :], dtype=float))
 
     # Find which gt ROI each ex ROI has max overlap with:
     # this will be the ex ROI's gt target

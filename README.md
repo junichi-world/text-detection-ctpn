@@ -27,7 +27,7 @@ there are some parameters you may need to modify according to your requirement, 
 ***
 # training
 ## setup
-- requirements: python2.7, tensorflow1.3, cython0.24, opencv-python, easydict,(recommend to install Anaconda)
+- requirements: python3, tensorflow2.x (tested with 2.10-2.15), cython, opencv-python, easydict
 - if you do not have a gpu device,follow here to [setup](https://github.com/eragonruan/text-detection-ctpn/issues/43)
 - if you have a gpu device, build the library by
 ```shell

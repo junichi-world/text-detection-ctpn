@@ -1,6 +1,8 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from .network import Network
 from lib.fast_rcnn.config import cfg
+
+tf.disable_v2_behavior()
 
 
 class VGGnet_test(Network):

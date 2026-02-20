@@ -3,12 +3,15 @@ from __future__ import print_function
 import os
 import sys
 
-import tensorflow as tf
-from tensorflow.python.framework.graph_util import convert_variables_to_constants
+import tensorflow.compat.v1 as tf
 
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from lib.networks.factory import get_network
 from lib.fast_rcnn.config import cfg, cfg_from_file
+
+tf.disable_v2_behavior()
 
 if __name__ == "__main__":
     cfg_from_file('ctpn/text.yml')
@@ -34,7 +37,9 @@ if __name__ == "__main__":
     for x in node_names:
         print(x)
     output_node_names = 'Reshape_2,rpn_bbox_pred/Reshape_1'
-    output_graph_def = convert_variables_to_constants(sess, input_graph_def, output_node_names.split(','))
+    output_graph_def = tf.graph_util.convert_variables_to_constants(
+        sess, input_graph_def, output_node_names.split(',')
+    )
     output_graph = 'data/ctpn.pb'
     with tf.gfile.GFile(output_graph, 'wb') as f:
         f.write(output_graph_def.SerializeToString())

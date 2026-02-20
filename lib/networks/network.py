@@ -1,9 +1,11 @@
 # -*- coding:utf-8 -*-
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from lib.fast_rcnn.config import cfg
 from lib.rpn_msr.proposal_layer_tf import proposal_layer as proposal_layer_py
 from lib.rpn_msr.anchor_target_layer_tf import anchor_target_layer as anchor_target_layer_py
+
+tf.disable_v2_behavior()
 DEFAULT_PADDING = 'SAME'
 
 def layer(op):
@@ -38,7 +40,7 @@ class Network(object):
         raise NotImplementedError('Must be subclassed.')
 
     def load(self, data_path, session, ignore_missing=False):
-        data_dict = np.load(data_path,encoding='latin1').item()
+        data_dict = np.load(data_path, allow_pickle=True, encoding='latin1').item()
         for key in data_dict:
             with tf.variable_scope(key, reuse=True):
                 for subkey in data_dict[key]:
@@ -94,8 +96,8 @@ class Network(object):
             img = tf.reshape(img, [N * H, W, C])
             img.set_shape([None, None, d_i])
 
-            lstm_fw_cell = tf.contrib.rnn.LSTMCell(d_h, state_is_tuple=True)
-            lstm_bw_cell = tf.contrib.rnn.LSTMCell(d_h, state_is_tuple=True)
+            lstm_fw_cell = tf.nn.rnn_cell.LSTMCell(d_h, state_is_tuple=True)
+            lstm_bw_cell = tf.nn.rnn_cell.LSTMCell(d_h, state_is_tuple=True)
 
             lstm_out, last_state = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell,lstm_bw_cell, img, dtype=tf.float32)
             lstm_out = tf.concat(lstm_out, axis=-1)
@@ -121,7 +123,7 @@ class Network(object):
             img = tf.reshape(img,[N*H,W,C])
             img.set_shape([None,None,d_i])
 
-            lstm_cell = tf.contrib.rnn.LSTMCell(d_h, state_is_tuple=True)
+            lstm_cell = tf.nn.rnn_cell.LSTMCell(d_h, state_is_tuple=True)
             initial_state = lstm_cell.zero_state(N*H, dtype=tf.float32)
 
             lstm_out, last_state = tf.nn.dynamic_rnn(lstm_cell, img,
@@ -288,7 +290,7 @@ class Network(object):
 
     @layer
     def concat(self, inputs, axis, name):
-        return tf.concat(concat_dim=axis, values=inputs, name=name)
+        return tf.concat(values=inputs, axis=axis, name=name)
 
     @layer
     def fc(self, input, num_out, name, relu=True, trainable=True):
@@ -345,10 +347,14 @@ class Network(object):
     def batch_normalization(self,input,name,relu=True,is_training=False):
         """contribution by miraclebiu"""
         if relu:
-            temp_layer=tf.contrib.layers.batch_norm(input,scale=True,center=True,is_training=is_training,scope=name)
+            temp_layer = tf.layers.batch_normalization(
+                input, scale=True, center=True, training=is_training, name=name
+            )
             return tf.nn.relu(temp_layer)
         else:
-            return tf.contrib.layers.batch_norm(input,scale=True,center=True,is_training=is_training,scope=name)
+            return tf.layers.batch_normalization(
+                input, scale=True, center=True, training=is_training, name=name
+            )
 
     @layer
     def dropout(self, input, keep_prob, name):
@@ -394,8 +400,11 @@ class Network(object):
         rpn_bbox_inside_weights = tf.gather(tf.reshape(rpn_bbox_inside_weights, [-1, 4]), rpn_keep)
         rpn_bbox_outside_weights = tf.gather(tf.reshape(rpn_bbox_outside_weights, [-1, 4]), rpn_keep)
 
-        rpn_loss_box_n = tf.reduce_sum(rpn_bbox_outside_weights * self.smooth_l1_dist(
-            rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)), reduction_indices=[1])
+        rpn_loss_box_n = tf.reduce_sum(
+            rpn_bbox_outside_weights
+            * self.smooth_l1_dist(rpn_bbox_inside_weights * (rpn_bbox_pred - rpn_bbox_targets)),
+            axis=[1],
+        )
 
         rpn_loss_box = tf.reduce_sum(rpn_loss_box_n) / (tf.reduce_sum(tf.cast(fg_keep, tf.float32)) + 1)
         rpn_cross_entropy = tf.reduce_mean(rpn_cross_entropy_n)

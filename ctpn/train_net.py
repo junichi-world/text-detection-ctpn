@@ -1,8 +1,10 @@
-import os.path
+import os
 import pprint
 import sys
 
-sys.path.append(os.getcwd())
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from lib.fast_rcnn.train import get_training_roidb, train_net
 from lib.fast_rcnn.config import cfg_from_file, get_output_dir, get_log_dir
 from lib.datasets.factory import get_imdb
