@@ -14,7 +14,7 @@ __C.GPU_ID = 0
 __C.IS_RPN = True
 __C.ANCHOR_SCALES = [16]
 __C.NCLASSES = 2
-__C.USE_GPU_NMS = True
+__C.USE_GPU_NMS = False
 # multiscale training and testing
 __C.IS_MULTISCALE = False
 __C.IS_EXTRAPOLATING = True
@@ -145,7 +145,7 @@ __C.TRAIN.RPN_POSITIVE_WEIGHT = -1.0
 #
 
 __C.TEST = edict()
-__C.TEST.checkpoints_path = "checkpoints/"
+__C.TEST.checkpoints_path = r"ctpn\checkpoints"
 __C.TEST.DETECT_MODE = "H"#H/O for horizontal/oriented mode
 # Scales to use during testing (can list multiple scales)
 # Each scale is the pixel size of an image's shortest side
@@ -223,7 +223,7 @@ __C.EXP_DIR = 'default'
 __C.LOG_DIR = 'default'
 
 # Use GPU implementation of non-maximum suppression
-__C.USE_GPU_NMS = True
+__C.USE_GPU_NMS = False
 
 
 
@@ -268,22 +268,20 @@ def _merge_a_into_b(a, b):
         # the types must match, too
         old_type = type(b[k])
         if old_type is not type(v):
+
             if isinstance(b[k], np.ndarray):
                 v = np.array(v, dtype=b[k].dtype)
+
+            elif isinstance(b[k], tuple) and isinstance(v, list):
+                v = tuple(v)
+
+            elif isinstance(b[k], list) and isinstance(v, tuple):
+                v = list(v)
+
             else:
                 raise ValueError(('Type mismatch ({} vs. {}) '
                                 'for config key: {}').format(type(b[k]),
                                                             type(v), k))
-
-        # recursively merge dicts
-        if type(v) is edict:
-            try:
-                _merge_a_into_b(a[k], b[k])
-            except:
-                print(('Error under config key: {}'.format(k)))
-                raise
-        else:
-            b[k] = v
 
 def cfg_from_file(filename):
     """Load a config file and merge it into the default options."""

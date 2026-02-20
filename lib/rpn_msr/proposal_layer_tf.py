@@ -11,7 +11,12 @@ DEBUG = False
 Outputs object detection proposals by applying estimated bounding-box
 transformations to a set of regular boxes (called "anchors").
 """
-def proposal_layer(rpn_cls_prob_reshape, rpn_bbox_pred, im_info, cfg_key, _feat_stride = [16,], anchor_scales = [16,]):
+def proposal_layer(rpn_cls_prob_reshape, rpn_bbox_pred, im_info, cfg_key,
+                   _feat_stride=[16,], anchor_scales=[16,]):
+
+    # ★ Python3 + tf.py_func: cfg_key が bytes で来ることがあるので str に戻す
+    if isinstance(cfg_key, bytes):
+        cfg_key = cfg_key.decode('ascii')
     """
     Parameters
     ----------
