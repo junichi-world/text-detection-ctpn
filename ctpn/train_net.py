@@ -11,6 +11,7 @@ from lib.fast_rcnn.config import cfg
 
 if __name__ == '__main__':
     cfg_from_file('ctpn/text.yml')
+    cfg.TRAIN.IMS_PER_BATCH = 1 
     print('Using config:')
     pprint.pprint(cfg)
     imdb = get_imdb('voc_2007_trainval')
@@ -22,7 +23,7 @@ if __name__ == '__main__':
     print('Output will be saved to `{:s}`'.format(output_dir))
     print('Logs will be saved to `{:s}`'.format(log_dir))
 
-    device_name = '/gpu:0'
+    device_name = '/cpu:0'
     print(device_name)
 
     network = get_network('VGGnet_train')

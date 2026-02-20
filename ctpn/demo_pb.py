@@ -25,9 +25,15 @@ def resize_im(im, scale, max_scale=None):
     return cv2.resize(im, None, None, fx=f, fy=f, interpolation=cv2.INTER_LINEAR), f
 
 
+import os  # 先頭に無ければ追加
+
 def draw_boxes(img, image_name, boxes, scale):
-    base_name = image_name.split('/')[-1]
-    with open('data/results/' + 'res_{}.txt'.format(base_name.split('.')[0]), 'w') as f:
+    base_name = os.path.basename(image_name)          # ★ここが重要（010.pngだけになる）
+    stem = os.path.splitext(base_name)[0]             # 010
+
+    os.makedirs('data/results', exist_ok=True)
+
+    with open(os.path.join('data', 'results', 'res_{}.txt'.format(stem)), 'w') as f:
         for box in boxes:
             if np.linalg.norm(box[0] - box[1]) < 5 or np.linalg.norm(box[3] - box[0]) < 5:
                 continue
@@ -49,8 +55,7 @@ def draw_boxes(img, image_name, boxes, scale):
             f.write(line)
 
     img = cv2.resize(img, None, None, fx=1.0 / scale, fy=1.0 / scale, interpolation=cv2.INTER_LINEAR)
-    cv2.imwrite(os.path.join("data/results", base_name), img)
-
+    cv2.imwrite(os.path.join("data", "results", base_name), img)
 
 if __name__ == '__main__':
 
