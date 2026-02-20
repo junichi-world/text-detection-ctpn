@@ -10,11 +10,14 @@ text detection mainly based on ctpn (connectionist text proposal network). It is
 - [x] BLSTM
 ***
 # demo
-- for a quick demo,you don't have to build the library, simpely use demo_pb.py for inference.
+- for a quick demo, use the SavedModel-based `demo_pb.py` inference entrypoint.
 - first, git clone git@github.com:eragonruan/text-detection-ctpn.git --depth=1
-- then, download the pb file from [release](https://github.com/eragonruan/text-detection-ctpn/releases)
-- put ctpn.pb in data/
-- put your images in data/demo, the results will be saved in data/results, and run demo in the root 
+- ensure there is a checkpoint under `ctpn/checkpoints` (or set `TEST.checkpoints_path` in `ctpn/text.yml`)
+- export SavedModel by running:
+```shell
+python ./ctpn/generate_pb.py
+```
+- put your images in `data/demo`, then run:
 ```shell
 python ./ctpn/demo_pb.py
 ```
@@ -27,7 +30,7 @@ there are some parameters you may need to modify according to your requirement, 
 ***
 # training
 ## setup
-- requirements: python3, tensorflow2.x (tested with 2.10-2.15), cython, opencv-python, easydict
+- requirements: python3.10/3.11, tensorflow==2.16.1, cython, opencv-python, easydict
 - if you do not have a gpu device,follow here to [setup](https://github.com/eragonruan/text-detection-ctpn/issues/43)
 - if you have a gpu device, build the library by
 ```shell
