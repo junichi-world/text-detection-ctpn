@@ -1,46 +1,55 @@
 from __future__ import print_function
 
 import os
+import shutil
 import sys
 
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-from lib.networks.factory import get_network
-from lib.fast_rcnn.config import cfg, cfg_from_file
 
-tf.disable_v2_behavior()
+from lib.fast_rcnn.config import cfg, cfg_from_file
+from lib.networks.factory import get_network
+
+
+class CTPNInferenceModule(tf.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    @tf.function(
+        input_signature=[
+            tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32, name="images"),
+            tf.TensorSpec(shape=[None, 3], dtype=tf.float32, name="im_info"),
+        ]
+    )
+    def __call__(self, images, im_info):
+        outputs = self.model(images, training=False)
+        return {
+            "rpn_cls_prob_reshape": outputs["rpn_cls_prob_reshape"],
+            "rpn_bbox_pred": outputs["rpn_bbox_pred"],
+        }
+
 
 if __name__ == "__main__":
-    cfg_from_file('ctpn/text.yml')
-
-    config = tf.ConfigProto(allow_soft_placement=True)
-    sess = tf.Session(config=config)
+    cfg_from_file("ctpn/text.yml")
     net = get_network("VGGnet_test")
-    print(('Loading network {:s}... '.format("VGGnet_test")), end=' ')
-    saver = tf.train.Saver()
-    try:
-        ckpt = tf.train.get_checkpoint_state(cfg.TEST.checkpoints_path)
-        print('Restoring from {}...'.format(ckpt.model_checkpoint_path), end=' ')
-        saver.restore(sess, ckpt.model_checkpoint_path)
-        print('done')
-    except:
-        raise 'Check your pretrained {:s}'.format(ckpt.model_checkpoint_path)
-    print(' done.')
+    _ = net(tf.zeros([1, 64, 64, 3], dtype=tf.float32), training=False)
 
-    print('all nodes are:\n')
-    graph = tf.get_default_graph()
-    input_graph_def = graph.as_graph_def()
-    node_names = [node.name for node in input_graph_def.node]
-    for x in node_names:
-        print(x)
-    output_node_names = 'Reshape_2,rpn_bbox_pred/Reshape_1'
-    output_graph_def = tf.graph_util.convert_variables_to_constants(
-        sess, input_graph_def, output_node_names.split(',')
-    )
-    output_graph = 'data/ctpn.pb'
-    with tf.gfile.GFile(output_graph, 'wb') as f:
-        f.write(output_graph_def.SerializeToString())
-    sess.close()
+    ckpt = tf.train.Checkpoint(model=net)
+    latest = tf.train.latest_checkpoint(cfg.TEST.checkpoints_path)
+    if latest is None:
+        raise RuntimeError("No checkpoint found under {}".format(cfg.TEST.checkpoints_path))
+    print("Restoring from {}...".format(latest), end=" ")
+    ckpt.restore(latest).expect_partial()
+    print("done")
+
+    export_dir = "data/ctpn_saved_model"
+    if os.path.isdir(export_dir):
+        shutil.rmtree(export_dir)
+
+    module = CTPNInferenceModule(net)
+    tf.saved_model.save(module, export_dir)
+    print("SavedModel exported to {}".format(export_dir))

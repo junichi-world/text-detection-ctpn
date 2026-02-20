@@ -1,13 +1,17 @@
-tensorflow==2.15.*
-numpy<2
+# Python 3.10/3.11
+tensorflow==2.16.1; python_version >= "3.10" and python_version < "3.12"
+keras>=3.0,<4.0
+numpy>=1.26,<2.0
 
-opencv-python
-Pillow
-matplotlib
-tqdm
-PyYAML
-easydict
-scipy
-pandas
+opencv-python>=4.8
+Pillow>=10.0
+matplotlib>=3.7
+tqdm>=4.66
+PyYAML>=6.0
+easydict>=1.13
+scipy>=1.10
+pandas>=2.0
 
-Cython>=0.29.36
+# For C extensions in lib/utils
+Cython>=3.0
+setuptools>=65

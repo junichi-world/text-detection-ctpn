@@ -3,12 +3,8 @@ from .VGGnet_train import VGGnet_train
 
 def get_network(name):
     """Get a network by name."""
-    if name.split('_')[0] == 'VGGnet':
-        if name.split('_')[1] == 'test':
-           return VGGnet_test()
-        elif name.split('_')[1] == 'train':
-           return VGGnet_train()
-        else:
-           raise KeyError('Unknown dataset: {}'.format(name))
-    else:
-        raise KeyError('Unknown dataset: {}'.format(name))
+    if name == "VGGnet_test":
+        return VGGnet_test()
+    if name == "VGGnet_train":
+        return VGGnet_train()
+    raise KeyError("Unknown dataset: {}".format(name))

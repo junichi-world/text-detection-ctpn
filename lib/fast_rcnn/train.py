@@ -1,231 +1,183 @@
 from __future__ import print_function
-import numpy as np
-import os
-import sys
-import tensorflow.compat.v1 as tf
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+import os
+import os.path as osp
+import sys
+
+import numpy as np
+import tensorflow as tf
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from lib.fast_rcnn.config import cfg
+from lib.roi_data_layer import roidb as rdl_roidb
 from lib.roi_data_layer.layer import RoIDataLayer
 from lib.utils.timer import Timer
-from lib.roi_data_layer import roidb as rdl_roidb
-from lib.fast_rcnn.config import cfg
-
-tf.disable_v2_behavior()
 
 _DEBUG = False
 
+
 class SolverWrapper(object):
-    def __init__(self, sess, network, imdb, roidb, output_dir, logdir, pretrained_model=None):
-        """Initialize the SolverWrapper."""
+    def __init__(self, network, imdb, roidb, output_dir, logdir, pretrained_model=None):
         self.net = network
         self.imdb = imdb
         self.roidb = roidb
         self.output_dir = output_dir
         self.pretrained_model = pretrained_model
 
-        print('Computing bounding-box regression targets...')
+        print("Computing bounding-box regression targets...")
         if cfg.TRAIN.BBOX_REG:
             self.bbox_means, self.bbox_stds = rdl_roidb.add_bbox_regression_targets(roidb)
-        print('done')
+        print("done")
 
-        # For checkpoint
-        self.saver = tf.train.Saver(max_to_keep=100,write_version=tf.train.SaverDef.V2)
-        self.writer = tf.summary.FileWriter(logdir=logdir,
-                                             graph=tf.get_default_graph(),
-                                             flush_secs=5)
+        self.lr = float(cfg.TRAIN.LEARNING_RATE)
+        self.global_step = tf.Variable(0, trainable=False, dtype=tf.int64, name="global_step")
+        self.optimizer = self._create_optimizer()
 
-    def snapshot(self, sess, iter):
-        net = self.net
-        if cfg.TRAIN.BBOX_REG and 'bbox_pred' in net.layers and cfg.TRAIN.BBOX_NORMALIZE_TARGETS:
-            # save original values
-            with tf.variable_scope('bbox_pred', reuse=True):
-                weights = tf.get_variable("weights")
-                biases = tf.get_variable("biases")
+        self.ckpt = tf.train.Checkpoint(step=self.global_step, optimizer=self.optimizer, model=self.net)
+        self.manager = tf.train.CheckpointManager(self.ckpt, directory=output_dir, max_to_keep=100)
+        self.writer = tf.summary.create_file_writer(logdir)
 
-            orig_0 = weights.eval()
-            orig_1 = biases.eval()
+    def _create_optimizer(self):
+        if cfg.TRAIN.SOLVER == "Adam":
+            return tf.keras.optimizers.Adam(learning_rate=self.lr)
+        if cfg.TRAIN.SOLVER == "RMS":
+            return tf.keras.optimizers.RMSprop(learning_rate=self.lr)
+        return tf.keras.optimizers.SGD(learning_rate=self.lr, momentum=cfg.TRAIN.MOMENTUM)
 
-            # scale and shift with bbox reg unnormalization; then save snapshot
-            weights_shape = weights.get_shape().as_list()
-            sess.run(weights.assign(orig_0 * np.tile(self.bbox_stds, (weights_shape[0],1))))
-            sess.run(biases.assign(orig_1 * self.bbox_stds + self.bbox_means))
+    def _get_lr(self):
+        try:
+            return float(tf.keras.backend.get_value(self.optimizer.learning_rate))
+        except Exception:
+            return float(self.optimizer.learning_rate)
 
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+    def _set_lr(self, value):
+        value = float(value)
+        self.lr = value
+        try:
+            self.optimizer.learning_rate.assign(value)
+        except Exception:
+            self.optimizer.learning_rate = value
 
-        infix = ('_' + cfg.TRAIN.SNAPSHOT_INFIX
-                 if cfg.TRAIN.SNAPSHOT_INFIX != '' else '')
-        filename = (cfg.TRAIN.SNAPSHOT_PREFIX + infix +
-                    '_iter_{:d}'.format(iter+1) + '.ckpt')
-        filename = os.path.join(self.output_dir, filename)
+    def _ensure_model_built(self):
+        _ = self.net(tf.zeros([1, 64, 64, 3], dtype=tf.float32), training=False)
 
-        self.saver.save(sess, filename)
-        print('Wrote snapshot to: {:s}'.format(filename))
+    def snapshot(self):
+        save_path = self.manager.save(checkpoint_number=int(self.global_step.numpy()))
+        print("Wrote snapshot to: {:s}".format(save_path))
 
-        if cfg.TRAIN.BBOX_REG and 'bbox_pred' in net.layers:
-            # restore net to original state
-            sess.run(weights.assign(orig_0))
-            sess.run(biases.assign(orig_1))
-
-    def build_image_summary(self):
-        # A simple graph for write image summary
-
-        log_image_data = tf.placeholder(tf.uint8, [None, None, 3], name='log_image_data')
-        log_image_name = tf.placeholder(tf.string, name='log_image_name')
-        # Keep this op so callers can add image summaries if needed.
-        log_image = tf.summary.image('train_image', tf.expand_dims(log_image_data, 0), max_outputs=1)
-        return log_image, log_image_data, log_image_name
-
-
-    def train_model(self, sess, max_iters, restore=False):
-        """Network training loop."""
+    def train_model(self, max_iters, restore=False):
         data_layer = get_data_layer(self.roidb, self.imdb.num_classes)
-        total_loss,model_loss, rpn_cross_entropy, rpn_loss_box=self.net.build_loss(ohem=cfg.TRAIN.OHEM)
-        # scalar summary
-        tf.summary.scalar('rpn_reg_loss', rpn_loss_box)
-        tf.summary.scalar('rpn_cls_loss', rpn_cross_entropy)
-        tf.summary.scalar('model_loss', model_loss)
-        tf.summary.scalar('total_loss',total_loss)
-        summary_op = tf.summary.merge_all()
+        self._ensure_model_built()
 
-        log_image, log_image_data, log_image_name =\
-            self.build_image_summary()
-
-        # optimizer
-        lr = tf.Variable(cfg.TRAIN.LEARNING_RATE, trainable=False)
-        if cfg.TRAIN.SOLVER == 'Adam':
-            opt = tf.train.AdamOptimizer(cfg.TRAIN.LEARNING_RATE)
-        elif cfg.TRAIN.SOLVER == 'RMS':
-            opt = tf.train.RMSPropOptimizer(cfg.TRAIN.LEARNING_RATE)
-        else:
-            # lr = tf.Variable(0.0, trainable=False)
-            momentum = cfg.TRAIN.MOMENTUM
-            opt = tf.train.MomentumOptimizer(lr, momentum)
-
-        global_step = tf.Variable(0, trainable=False)
-        with_clip = True
-        if with_clip:
-            tvars = tf.trainable_variables()
-            grads, norm = tf.clip_by_global_norm(tf.gradients(total_loss, tvars), 10.0)
-            train_op = opt.apply_gradients(list(zip(grads, tvars)), global_step=global_step)
-        else:
-            train_op = opt.minimize(total_loss, global_step=global_step)
-
-        # intialize variables
-        sess.run(tf.global_variables_initializer())
-        restore_iter = 0
-
-        # load vgg16
         if self.pretrained_model is not None and not restore:
             try:
-                print(('Loading pretrained model '
-                   'weights from {:s}').format(self.pretrained_model))
-                self.net.load(self.pretrained_model, sess, True)
+                print(("Loading pretrained model weights from {:s}").format(self.pretrained_model))
+                self.net.load_pretrained(self.pretrained_model)
             except Exception as e:
-                raise Exception('Check your pretrained model {:s}: {}'.format(self.pretrained_model, e)) from e
+                raise Exception("Check your pretrained model {:s}: {}".format(self.pretrained_model, e)) from e
 
-        # resuming a trainer
         if restore:
-            try:
-                ckpt = tf.train.get_checkpoint_state(self.output_dir)
-                print('Restoring from {}...'.format(ckpt.model_checkpoint_path), end=' ')
-                self.saver.restore(sess, ckpt.model_checkpoint_path)
-                stem = os.path.splitext(os.path.basename(ckpt.model_checkpoint_path))[0]
-                restore_iter = int(stem.split('_')[-1])
-                sess.run(global_step.assign(restore_iter))
-                print('done')
-            except:
-                raise 'Check your pretrained {:s}'.format(ckpt.model_checkpoint_path)
+            latest_ckpt = self.manager.latest_checkpoint
+            if latest_ckpt is None:
+                raise RuntimeError("No checkpoint found under {}".format(self.output_dir))
+            print("Restoring from {}...".format(latest_ckpt), end=" ")
+            self.ckpt.restore(latest_ckpt).expect_partial()
+            print("done")
+
+        restore_iter = int(self.global_step.numpy())
+        if restore_iter >= max_iters:
+            print("restore_iter ({}) >= max_iters ({}), skipping training".format(restore_iter, max_iters))
+            return
 
         last_snapshot_iter = -1
         timer = Timer()
+
         for iter in range(restore_iter, max_iters):
             timer.tic()
-            # learning rate
-            if iter != 0 and iter % cfg.TRAIN.STEPSIZE == 0:
-                sess.run(tf.assign(lr, lr.eval() * cfg.TRAIN.GAMMA))
-                print(lr)
 
-            # get one batch
+            if iter != 0 and iter % cfg.TRAIN.STEPSIZE == 0:
+                self._set_lr(self._get_lr() * cfg.TRAIN.GAMMA)
+                print("lr -> {:.8f}".format(self._get_lr()))
+
             blobs = data_layer.forward()
 
-            feed_dict={
-                self.net.data: blobs['data'],
-                self.net.im_info: blobs['im_info'],
-                self.net.keep_prob: 0.5,
-                self.net.gt_boxes: blobs['gt_boxes'],
-                self.net.gt_ishard: blobs['gt_ishard'],
-                self.net.dontcare_areas: blobs['dontcare_areas']
-            }
-            res_fetches=[]
-            fetch_list = [total_loss,model_loss, rpn_cross_entropy, rpn_loss_box,
-                          summary_op,
-                          train_op] + res_fetches
+            images = tf.convert_to_tensor(blobs["data"], dtype=tf.float32)
+            im_info = tf.convert_to_tensor(blobs["im_info"], dtype=tf.float32)
+            gt_boxes = tf.convert_to_tensor(blobs["gt_boxes"], dtype=tf.float32)
+            gt_ishard = tf.convert_to_tensor(blobs["gt_ishard"], dtype=tf.int32)
+            dontcare_areas = tf.convert_to_tensor(blobs["dontcare_areas"], dtype=tf.float32)
 
-            total_loss_val,model_loss_val, rpn_loss_cls_val, rpn_loss_box_val, \
-                summary_str, _ = sess.run(fetches=fetch_list, feed_dict=feed_dict)
+            with tf.GradientTape() as tape:
+                losses = self.net.compute_losses(images, im_info, gt_boxes, gt_ishard, dontcare_areas)
 
-            self.writer.add_summary(summary=summary_str, global_step=global_step.eval())
+            tvars = self.net.trainable_variables
+            grads = tape.gradient(losses["total_loss"], tvars)
+            grads, _ = tf.clip_by_global_norm(grads, 10.0)
+            grads_and_vars = [(g, v) for g, v in zip(grads, tvars) if g is not None]
+            self.optimizer.apply_gradients(grads_and_vars)
+            self.global_step.assign_add(1)
+
+            with self.writer.as_default():
+                tf.summary.scalar("rpn_reg_loss", losses["rpn_loss_box"], step=self.global_step)
+                tf.summary.scalar("rpn_cls_loss", losses["rpn_cross_entropy"], step=self.global_step)
+                tf.summary.scalar("model_loss", losses["model_loss"], step=self.global_step)
+                tf.summary.scalar("total_loss", losses["total_loss"], step=self.global_step)
+                tf.summary.scalar("lr", self._get_lr(), step=self.global_step)
 
             _diff_time = timer.toc(average=False)
 
+            if iter % cfg.TRAIN.DISPLAY == 0:
+                print(
+                    "iter: %d / %d, total loss: %.4f, model loss: %.4f, rpn_loss_cls: %.4f, "
+                    "rpn_loss_box: %.4f, lr: %f"
+                    % (
+                        iter,
+                        max_iters,
+                        float(losses["total_loss"].numpy()),
+                        float(losses["model_loss"].numpy()),
+                        float(losses["rpn_cross_entropy"].numpy()),
+                        float(losses["rpn_loss_box"].numpy()),
+                        self._get_lr(),
+                    )
+                )
+                print("speed: {:.3f}s / iter".format(_diff_time))
 
-            if (iter) % (cfg.TRAIN.DISPLAY) == 0:
-                print('iter: %d / %d, total loss: %.4f, model loss: %.4f, rpn_loss_cls: %.4f, rpn_loss_box: %.4f, lr: %f'%\
-                        (iter, max_iters, total_loss_val,model_loss_val,rpn_loss_cls_val,rpn_loss_box_val,lr.eval()))
-                print('speed: {:.3f}s / iter'.format(_diff_time))
-
-            if (iter+1) % cfg.TRAIN.SNAPSHOT_ITERS == 0:
+            if (iter + 1) % cfg.TRAIN.SNAPSHOT_ITERS == 0:
                 last_snapshot_iter = iter
-                self.snapshot(sess, iter)
+                self.snapshot()
 
         if last_snapshot_iter != iter:
-            self.snapshot(sess, iter)
+            self.snapshot()
+
 
 def get_training_roidb(imdb):
-    """Returns a roidb (Region of Interest database) for use in training."""
     if cfg.TRAIN.USE_FLIPPED:
-        print('Appending horizontally-flipped training examples...')
+        print("Appending horizontally-flipped training examples...")
         imdb.append_flipped_images()
-        print('done')
+        print("done")
 
-    print('Preparing training data...')
+    print("Preparing training data...")
     if cfg.TRAIN.HAS_RPN:
-            rdl_roidb.prepare_roidb(imdb)
+        rdl_roidb.prepare_roidb(imdb)
     else:
         rdl_roidb.prepare_roidb(imdb)
-    print('done')
-
+    print("done")
     return imdb.roidb
 
 
 def get_data_layer(roidb, num_classes):
-    """return a data layer."""
     if cfg.TRAIN.HAS_RPN:
         if cfg.IS_MULTISCALE:
-            # obsolete
-            # layer = GtDataLayer(roidb)
-            raise "Calling caffe modules..."
-        else:
-            layer = RoIDataLayer(roidb, num_classes)
-    else:
-        layer = RoIDataLayer(roidb, num_classes)
-
-    return layer
-
+            raise RuntimeError("Calling caffe modules...")
+        return RoIDataLayer(roidb, num_classes)
+    return RoIDataLayer(roidb, num_classes)
 
 
 def train_net(network, imdb, roidb, output_dir, log_dir, pretrained_model=None, max_iters=40000, restore=False):
-    """Train a Fast R-CNN network."""
-
-    config = tf.ConfigProto(allow_soft_placement=True)
-    config.gpu_options.allocator_type = 'BFC'
-    config.gpu_options.per_process_gpu_memory_fraction = 0.75
-    with tf.Session(config=config) as sess:
-        sw = SolverWrapper(sess, network, imdb, roidb, output_dir, logdir= log_dir, pretrained_model=pretrained_model)
-        print('Solving...')
-        sw.train_model(sess, max_iters, restore=restore)
-        print('done solving')
+    sw = SolverWrapper(network, imdb, roidb, output_dir, logdir=log_dir, pretrained_model=pretrained_model)
+    print("Solving...")
+    sw.train_model(max_iters, restore=restore)
+    print("done solving")

@@ -1,5 +1,7 @@
-import numpy as np
 import cv2
+import numpy as np
+import tensorflow as tf
+
 from .config import cfg
 from lib.utils.blob import im_list_to_blob
 
@@ -17,42 +19,40 @@ def _get_image_blob(im):
 
     for target_size in cfg.TEST.SCALES:
         im_scale = float(target_size) / float(im_size_min)
-        # Prevent the biggest axis from being more than MAX_SIZE
         if np.round(im_scale * im_size_max) > cfg.TEST.MAX_SIZE:
             im_scale = float(cfg.TEST.MAX_SIZE) / float(im_size_max)
-        im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale,
-                        interpolation=cv2.INTER_LINEAR)
+        im_resized = cv2.resize(
+            im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR
+        )
         im_scale_factors.append(im_scale)
-        processed_ims.append(im)
+        processed_ims.append(im_resized)
 
-    # Create a blob to hold the input images
     blob = im_list_to_blob(processed_ims)
-
     return blob, np.array(im_scale_factors)
 
 
 def _get_blobs(im, rois):
-    blobs = {'data' : None, 'rois' : None}
-    blobs['data'], im_scale_factors = _get_image_blob(im)
+    blobs = {"data": None, "rois": None}
+    blobs["data"], im_scale_factors = _get_image_blob(im)
     return blobs, im_scale_factors
 
 
-def test_ctpn(sess, net, im, boxes=None):
+def test_ctpn(net, im, boxes=None):
     blobs, im_scales = _get_blobs(im, boxes)
     if cfg.TEST.HAS_RPN:
-        im_blob = blobs['data']
-        blobs['im_info'] = np.array(
-            [[im_blob.shape[1], im_blob.shape[2], im_scales[0]]],
-            dtype=np.float32)
-    # forward pass
-    if cfg.TEST.HAS_RPN:
-        feed_dict = {net.data: blobs['data'], net.im_info: blobs['im_info'], net.keep_prob: 1.0}
+        im_blob = blobs["data"]
+        blobs["im_info"] = np.array([[im_blob.shape[1], im_blob.shape[2], im_scales[0]]], dtype=np.float32)
+    else:
+        raise ValueError("Only RPN mode is supported")
 
-    rois = sess.run([net.get_output('rois')[0]],feed_dict=feed_dict)
-    rois=rois[0]
+    rois, _, _ = net.predict_rois(
+        tf.convert_to_tensor(blobs["data"], dtype=tf.float32),
+        tf.convert_to_tensor(blobs["im_info"], dtype=tf.float32),
+        cfg_key="TEST",
+    )
+    rois = rois.numpy()
 
     scores = rois[:, 0]
-    if cfg.TEST.HAS_RPN:
-        assert len(im_scales) == 1, "Only single-image batch implemented"
-        boxes = rois[:, 1:5] / im_scales[0]
-    return scores,boxes
+    assert len(im_scales) == 1, "Only single-image batch implemented"
+    boxes = rois[:, 1:5] / im_scales[0]
+    return scores, boxes
