@@ -18,6 +18,7 @@ from lib.fast_rcnn.test import _get_blobs
 from lib.rpn_msr.proposal_layer_tf import proposal_layer
 from lib.text_connector.detectors import TextDetector
 from lib.text_connector.text_connect_cfg import Config as TextLineCfg
+from ctpn.tf_runtime import configure_tensorflow_runtime
 
 
 def resize_im(im, scale, max_scale=None):
@@ -58,6 +59,8 @@ def draw_boxes(img, image_name, boxes, scale):
 
 
 if __name__ == "__main__":
+    configure_tensorflow_runtime()
+
     if os.path.exists("data/results/"):
         shutil.rmtree("data/results/")
     os.makedirs("data/results/")

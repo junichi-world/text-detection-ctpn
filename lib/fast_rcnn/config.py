@@ -145,7 +145,7 @@ __C.TRAIN.RPN_POSITIVE_WEIGHT = -1.0
 #
 
 __C.TEST = edict()
-__C.TEST.checkpoints_path = r"ctpn\checkpoints"
+__C.TEST.checkpoints_path = osp.join('ctpn', 'checkpoints')
 __C.TEST.DETECT_MODE = "H"#H/O for horizontal/oriented mode
 # Scales to use during testing (can list multiple scales)
 # Each scale is the pixel size of an image's shortest side
@@ -282,6 +282,16 @@ def _merge_a_into_b(a, b):
                 raise ValueError(('Type mismatch ({} vs. {}) '
                                 'for config key: {}').format(type(b[k]),
                                                             type(v), k))
+
+        # recursively merge dict-like configs
+        if type(v) is edict:
+            try:
+                _merge_a_into_b(a[k], b[k])
+            except Exception:
+                print('Error under config key: {}'.format(k))
+                raise
+        else:
+            b[k] = v
 
 def cfg_from_file(filename):
     """Load a config file and merge it into the default options."""

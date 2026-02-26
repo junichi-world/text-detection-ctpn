@@ -12,6 +12,32 @@ if PROJECT_ROOT not in sys.path:
 
 from lib.fast_rcnn.config import cfg, cfg_from_file
 from lib.networks.factory import get_network
+from ctpn.tf_runtime import configure_tensorflow_runtime
+
+
+def find_latest_checkpoint(checkpoint_path):
+    candidates = []
+    if os.path.isabs(checkpoint_path):
+        candidates.append(checkpoint_path)
+    else:
+        candidates.extend(
+            [
+                checkpoint_path,
+                os.path.join(PROJECT_ROOT, checkpoint_path),
+                os.path.join(PROJECT_ROOT, "ctpn", checkpoint_path),
+            ]
+        )
+
+    seen = set()
+    for candidate in candidates:
+        norm = os.path.normpath(candidate)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        latest = tf.train.latest_checkpoint(norm)
+        if latest is not None:
+            return latest, norm
+    return None, checkpoint_path
 
 
 class CTPNInferenceModule(tf.Module):
@@ -34,15 +60,17 @@ class CTPNInferenceModule(tf.Module):
 
 
 if __name__ == "__main__":
+    configure_tensorflow_runtime()
+
     cfg_from_file("ctpn/text.yml")
     net = get_network("VGGnet_test")
     _ = net(tf.zeros([1, 64, 64, 3], dtype=tf.float32), training=False)
 
     ckpt = tf.train.Checkpoint(model=net)
-    latest = tf.train.latest_checkpoint(cfg.TEST.checkpoints_path)
+    latest, resolved_ckpt_dir = find_latest_checkpoint(cfg.TEST.checkpoints_path)
     if latest is None:
         raise RuntimeError("No checkpoint found under {}".format(cfg.TEST.checkpoints_path))
-    print("Restoring from {}...".format(latest), end=" ")
+    print("Restoring from {} (resolved from {})...".format(latest, resolved_ckpt_dir), end=" ")
     ckpt.restore(latest).expect_partial()
     print("done")
 

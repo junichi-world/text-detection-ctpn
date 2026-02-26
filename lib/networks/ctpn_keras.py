@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import inspect
 
 from lib.fast_rcnn.config import cfg
 from lib.rpn_msr.anchor_target_layer_tf import anchor_target_layer
@@ -24,8 +25,19 @@ class CTPNModel(tf.keras.Model):
         self.rpn_conv_3x3 = tf.keras.layers.Conv2D(
             512, 3, padding="same", activation="relu", name="rpn_conv_3x3", kernel_regularizer=regularizer
         )
+        lstm_kwargs = dict(units=128, return_sequences=True)
+        lstm_sig = inspect.signature(tf.keras.layers.LSTM)
+        if "use_cudnn" in lstm_sig.parameters:
+            # Newer Keras: explicitly avoid the cuDNN kernel path.
+            lstm_kwargs["use_cudnn"] = False
+        else:
+            # tf_keras in NGC TF 2.17 does not expose `use_cudnn`; setting
+            # recurrent_dropout>0 disables the cuDNN implementation path.
+            # This has no effect during inference (`training=False`).
+            lstm_kwargs["recurrent_dropout"] = 1e-6
+
         self.lstm_o_bilstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(128, return_sequences=True),
+            tf.keras.layers.LSTM(**lstm_kwargs),
             merge_mode="concat",
             name="lstm_o_bilstm",
         )
