@@ -11,26 +11,19 @@ WORKDIR /workspace/text-detection-ctpn
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /tmp/requirements.txt
 RUN python -m pip install --upgrade pip && \
-    python -m pip install --no-cache-dir "numpy<2" && \
-    python -m pip install --no-cache-dir \
-      easydict \
-      opencv-python \
-      Pillow \
-      matplotlib \
-      tqdm \
-      PyYAML \
-      scipy \
-      pandas \
-      Cython \
-      setuptools
+    python -m pip install --no-cache-dir -r /tmp/requirements.txt && \
+    python -m pip install --no-cache-dir --force-reinstall "numpy<2"
 
 COPY . /workspace/text-detection-ctpn
 
-RUN chmod +x scripts/*.sh lib/utils/make.sh && \
+RUN sed -i 's/\r$//' scripts/*.sh lib/utils/make.sh && \
+    chmod +x scripts/*.sh lib/utils/make.sh && \
     /workspace/text-detection-ctpn/scripts/setup_env.sh --skip-pip
 
 CMD ["/bin/bash"]
